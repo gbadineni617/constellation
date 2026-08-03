@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+        * { font-family:'Inter',system-ui,sans-serif; }
+        .disp{ font-family:'Space Grotesk',system-ui,sans-serif; }
+        .mono{ font-family:'Space Grotesk',ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+        .pulse{ animation:pulse 2.2s ease-in-out infinite; }
+        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,181,68,.45)}50%{box-shadow:0 0 0 8px rgba(245,181,68,0)}}
+        .lit{ box-shadow:0 0 10px 2px rgba(45,212,191,.55), 0 0 22px 6px rgba(45,212,191,.18); }
+        .fade{ animation:fade .35s ease; } @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+        .build-row{ opacity:0; animation:br .5s ease forwards; } @keyframes br{to{opacity:1}}
+        .hover-lift{ transition:transform .18s ease, border-color .18s ease; }
+        .hover-lift:hover{ transform:translateY(-2px); border-color:#8B6DFF66 !important; }
+        .add-node{ transition:border-color .18s ease, color .18s ease, transform .18s ease; }
+        .add-node:hover{ border-color:#8B6DFF !important; color:#8B6DFF !important; transform:scale(1.1); }
+        button:focus-visible, input:focus-visible, textarea:focus-visible{ outline:2px solid #8B6DFF; outline-offset:2px; }
+        textarea, input{ outline:none; }
+        input::placeholder, textarea::placeholder{ color:#5B5473; }
+        @media (prefers-reduced-motion: reduce){
+          *{ animation:none !important; transition:none !important; }
+        }
+
+html, body { background: #0E0B1A; color: #EDEBF5; }
+
+.spin{ animation:spin 1s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg) } }
+
+.gap-node{ transition:opacity .16s ease, transform .16s ease, border-color .16s ease; }
+.gap-node:hover{ opacity:1 !important; transform:scale(1.35) !important; }
