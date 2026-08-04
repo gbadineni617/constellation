@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Library as LibraryIcon, FileText, Loader2, AlertCircle, Link2, BadgeCheck } from "lucide-react";
 import { C } from "@/lib/theme";
+import { readJson } from "@/lib/http";
 import { SurfaceHead } from "@/components/shared";
 import { traitsOf, editSignal, isApproved, MIN_CORPUS_FOR_PATTERNS } from "@/lib/corpus";
 
@@ -28,7 +29,7 @@ export function Library({ records }) {
     (async () => {
       try {
         const res = await fetch("/api/documents");
-        const data = await res.json();
+        const data = await readJson(res);
         if (off) return;
         setDocs(data.documents || []);
         setStatus("ready");

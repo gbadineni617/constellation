@@ -137,3 +137,38 @@ test("a customer starting fresh produces no claims at all", () => {
   assert.equal(plan.claims.length, 0);
   assert.equal(plan.unevidenced, 0);
 });
+
+// ── Non-JSON responses ───────────────────────────────────────────────────
+import { readJson } from "../lib/http.js";
+
+const fakeRes = (status, body, ok = status < 400) => ({
+  status, ok, text: async () => body,
+});
+
+test("a timeout reports a timeout, not a parse error", async () => {
+  await assert.rejects(
+    () => readJson(fakeRes(504, "<html>An error occurred</html>")),
+    /took too long/,
+    "the user needs to know the request was killed, not that a character was unexpected"
+  );
+});
+
+test("an HTML error page from a crashed function says so", async () => {
+  await assert.rejects(() => readJson(fakeRes(500, "<!DOCTYPE html><h1>500</h1>")), /server hit an error \(500\)/);
+});
+
+test("a real JSON error keeps its own message", async () => {
+  await assert.rejects(
+    () => readJson(fakeRes(400, JSON.stringify({ error: "Those files are unreadable." }))),
+    /Those files are unreadable/
+  );
+});
+
+test("a successful response parses normally", async () => {
+  const data = await readJson(fakeRes(200, JSON.stringify({ ok: true, n: 3 })));
+  assert.equal(data.n, 3);
+});
+
+test("an oversized payload is named as such", async () => {
+  await assert.rejects(() => readJson(fakeRes(413, "Payload Too Large")), /too large/);
+});

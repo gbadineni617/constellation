@@ -7,6 +7,12 @@ import { findReferences, saveDocument } from "@/lib/db";
 import { pickReferences, formatReferences, commonPatterns, formatPatterns } from "@/lib/corpus";
 
 export const runtime = "nodejs";
+/**
+ * Vercel's Hobby plan caps functions at 60s and older projects at 10s. Declaring
+ * more than the plan allows does not extend it — the platform kills the request
+ * and returns an HTML error page, which is what produced "Unexpected token 'A'".
+ * Keep this at or under the plan limit, and keep the work inside it.
+ */
 export const maxDuration = 60;
 
 
@@ -189,9 +195,16 @@ export async function POST(req) {
     // Pass one: classify only. Cheap, and it is the only way to know which past
     // journeys are comparable before designing this one. Retrieval needs traits,
     // and traits come from reading the document.
+    //
+    // It is also the expendable half. If the corpus has nothing to retrieve, the
+    // call buys nothing and costs seconds we may not have — so skip it entirely.
+    const started = Date.now();
     let references = [];
     let patterns = null;
     try {
+      const corpus = await findReferences();
+      if (!corpus.length) throw new Error("empty corpus — classification would buy nothing");
+
       const classify = await client.messages.create({
         model: process.env.CONSTELLATION_MODEL || "claude-sonnet-5",
         max_tokens: 400,
@@ -201,7 +214,7 @@ export async function POST(req) {
         }],
       });
       const traits = parseJson(classify);
-      const pool = await findReferences();
+      const pool = corpus;
 
       // Two ways the corpus contributes, and they scale differently.
       //

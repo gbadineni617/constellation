@@ -3,6 +3,7 @@
 import React, { useState, useRef } from "react";
 import { Upload, Sparkles, Check, AlertCircle, FileText, ClipboardPaste, X } from "lucide-react";
 import { C } from "@/lib/theme";
+import { readJson } from "@/lib/http";
 import { LABELS } from "@/lib/intake";
 import { ProgressReview } from "./ProgressReview";
 
@@ -56,8 +57,7 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not read that.");
+      const data = await readJson(res);
       setResult(data);
       setState("done");
       onExtracted({ ...data, sourceName: label });

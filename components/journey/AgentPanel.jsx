@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Zap, Sparkles, AlertCircle, Mail, MessageSquare, Copy } from "lucide-react";
 
 import { C, RISK } from "@/lib/theme";
+import { readJson } from "@/lib/http";
 
 import { PEOPLE } from "@/lib/theme";
 
@@ -93,12 +94,7 @@ export function AgentPanel({ rec, risk }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.error || "The drafting service returned " + res.status + ".");
-      }
-      const parsed = await res.json();
-      setDraft(parsed);
+      setDraft(await readJson(res));
       setState("done");
     } catch (e) {
       setErr(String(e.message || e));

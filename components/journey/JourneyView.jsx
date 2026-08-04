@@ -12,6 +12,7 @@ import { coerceTicket, isOpen } from "@/lib/tickets";
 import { coerceMarker } from "@/lib/markers";
 import { describeTarget } from "@/lib/surfaces";
 import { isEmbedded, navigateHost } from "@/lib/embed";
+import { readJson } from "@/lib/http";
 import { isApproved, approve, unapprove } from "@/lib/corpus";
 import { GapPanel } from "./GapPanel";
 
@@ -45,8 +46,7 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
     setSyncing(true); setSyncErr("");
     try {
       const res = await fetch("/api/smartcat/health");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not read the workspace.");
+      const data = await readJson(res);
       onPatch((r) => ({
         ...r,
         health: data.values.map((x) => (x == null ? 0 : x)),
