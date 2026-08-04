@@ -29,3 +29,6 @@ html, body { background: #0E0B1A; color: #EDEBF5; }
 
 .gap-node{ transition:opacity .16s ease, transform .16s ease, border-color .16s ease; }
 .gap-node:hover{ opacity:1 !important; transform:scale(1.35) !important; }
+
+.row-actions{ opacity:.45; transition:opacity .14s ease; }
+.row-actions:hover, .row-actions:focus-within{ opacity:1; }

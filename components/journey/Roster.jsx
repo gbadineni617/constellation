@@ -5,6 +5,7 @@ import { Users, ChevronDown, Check, ShieldCheck, Search, Copy, ArrowUpRight, Arr
 import { C } from "@/lib/theme";
 import { PAIR_STATES, PAIR_STATE_IDS, rosterState, REVIEW_MODELS } from "@/lib/marketplace";
 import { marketplaceQuery, sourcingBrief, describeTarget } from "@/lib/surfaces";
+import { usesMarketplace } from "@/lib/marketplace";
 import { navigateHost, isEmbedded } from "@/lib/embed";
 
 const TONE = { scoping: C.faint, sourcing: C.muted, trial: C.amber, approved: C.teal, active: C.teal };
@@ -32,7 +33,10 @@ export function Roster({ rec, onPatch }) {
     });
   };
 
-  const brief = sourcingBrief(rec, rec.pairs);
+  // Sourcing only applies when Smartcat is finding the linguists. With internal
+  // reviewers the roster is still worth showing — you just do not search for them.
+  const sourcing = usesMarketplace(rec);
+  const brief = sourcing ? sourcingBrief(rec, rec.pairs) : null;
 
   const copyBrief = () => {
     if (!brief) return;
@@ -55,7 +59,7 @@ export function Roster({ rec, onPatch }) {
         <div className="flex-1 min-w-0">
           <div className="disp text-sm font-bold">Linguist roster</div>
           <div className="text-xs mt-0.5" style={{ color: C.muted }}>
-            {REVIEW_MODELS[rec.reviewModel]?.short || "Marketplace"}
+            {REVIEW_MODELS[rec.reviewModel]?.short || "Not established"}
             {rec.specialization ? " · " + rec.specialization : ""}
             {rec.turnaround ? " · " + rec.turnaround : ""}
           </div>
@@ -108,7 +112,7 @@ export function Roster({ rec, onPatch }) {
                   {p.note && <span className="text-xs truncate" style={{ color: C.faint }}>{p.note}</span>}
 
                   <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                    {!st.done && (
+                    {!st.done && sourcing && (
                       <button
                         onClick={() => findFor(p)}
                         title={"Search Marketplace: " + marketplaceQuery(rec, p).summary}
@@ -131,6 +135,18 @@ export function Roster({ rec, onPatch }) {
               );
             })}
           </div>
+
+          {!sourcing && r.blocked.length > 0 && (
+            <div className="rounded-lg px-3 py-2.5 mt-3" style={{ background: C.amber + "12", border: "1px solid " + C.amber + "33" }}>
+              <div style={{ fontSize: 11, color: C.text }}>
+                {r.blocked.length} {r.blocked.length === 1 ? "pair has" : "pairs have"} no approved reviewer, and nobody has
+                said whether Smartcat is sourcing them.
+              </div>
+              <div className="text-xs mt-1" style={{ color: C.muted }}>
+                Set Reviewers to Marketplace or Hybrid above and each unstaffed pair gets a search button.
+              </div>
+            </div>
+          )}
 
           {r.blocked.length > 0 && (
             <div className="text-xs mt-3" style={{ color: C.amber }}>

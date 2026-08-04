@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 
-import { Check, Minus, Sparkles, ArrowLeft, ArrowUpRight, AlertCircle, AlertTriangle, ChevronDown, Layers, Languages, Gauge, Plug, Copy, Plus, Users, BadgeCheck, RefreshCw, ArrowRight, CalendarDays } from "lucide-react";
+import { Check, Minus, Sparkles, ArrowLeft, ArrowUpRight, AlertCircle, AlertTriangle, ChevronDown, Layers, Languages, Gauge, Plug, Copy, Plus, Users, BadgeCheck, RefreshCw, ArrowRight, CalendarDays, Pencil, X } from "lucide-react";
 
 import { C, STATUS, NEXT, PEOPLE, peopleOf } from "@/lib/theme";
 
@@ -33,6 +33,16 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
   const [showSteps, setShowSteps] = useState(false);
   const [adding, setAdding] = useState(null); // "step" | "phase" | null
   const [gapId, setGapId] = useState(null);
+  const [editingPhase, setEditingPhase] = useState(false);
+  const [phaseDraft, setPhaseDraft] = useState("");
+
+  // Phases can be renamed, including the required ones. The id never changes, so
+  // the spine still recognises them and everything keyed off the phase survives.
+  const renamePhase = () => {
+    if (!phaseDraft.trim()) return;
+    onPatch((r) => ({ ...r, phaseRenames: { ...(r.phaseRenames || {}), [sel.id]: phaseDraft.trim() } }));
+    setEditingPhase(false);
+  };
   const [embedded, setEmbedded] = useState(false);
   const [contacting, setContacting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -426,7 +436,39 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
           <span className="mono text-xs" style={{ color: C.muted }}>{sel.week}</span>
         </div>
 
-        <h2 className="disp text-xl font-bold mt-2">{sel.label}</h2>
+        {editingPhase ? (
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              autoFocus
+              value={phaseDraft}
+              onChange={(e) => setPhaseDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && phaseDraft.trim()) { renamePhase(); }
+                if (e.key === "Escape") { setPhaseDraft(sel.label); setEditingPhase(false); }
+              }}
+              className="disp text-xl font-bold rounded px-2 py-1"
+              style={{ background: C.panel2, border: "1px solid " + C.violet + "77", color: C.text, outline: "none", minWidth: 280 }}
+            />
+            <button onClick={renamePhase} className="rounded p-1" style={{ color: C.teal }} title="Save">
+              <Check size={16} strokeWidth={3} />
+            </button>
+            <button onClick={() => { setPhaseDraft(sel.label); setEditingPhase(false); }} className="rounded p-1" style={{ color: C.faint }}>
+              <X size={16} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mt-2">
+            <h2 className="disp text-xl font-bold">{sel.label}</h2>
+            <button
+              onClick={() => { setPhaseDraft(sel.label); setEditingPhase(true); }}
+              className="rounded p-1 row-actions"
+              style={{ color: C.muted, border: "1px solid " + C.line, lineHeight: 0 }}
+              title="Rename this phase"
+            >
+              <Pencil size={12} />
+            </button>
+          </div>
+        )}
         <p className="text-sm mt-2 leading-relaxed" style={{ color: C.text, maxWidth: 620 }}>{copy.blurb}</p>
 
         {/* Have you achieved it? */}
@@ -530,6 +572,8 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
                 onDue={(k, v) => onPatch((r) => ({ ...r, dueDates: { ...(r.dueDates || {}), [k]: v } }))}
                 onOwner={(k, v) => onPatch((r) => ({ ...r, owners: { ...(r.owners || {}), [k]: v } }))}
                 people={people}
+                onRename={(k, t) => onPatch((r) => ({ ...r, renames: { ...(r.renames || {}), [k]: t } }))}
+                onRemove={(k) => onPatch((r) => ({ ...r, removedSteps: [...(r.removedSteps || []), k] }))}
                 onTicket={(k, t) =>
                   onPatch((r) => ({ ...r, tickets: [...(r.tickets || []), coerceTicket({ ...t, stepKey: k })] }))
                 }
@@ -596,7 +640,9 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
         </div>
       )}
 
-      {usesMarketplace(rec) && <Roster rec={rec} onPatch={onPatch} />}
+      {/* Shown whenever pairs exist, not only for Marketplace engagements: knowing
+          which locales have a reviewer is useful even when they are all internal. */}
+      {(usesMarketplace(rec) || (rec.pairs || []).length > 0) && <Roster rec={rec} onPatch={onPatch} />}
 
       <AgentPanel rec={rec} risk={risk} />
     </>

@@ -50,6 +50,17 @@ journey defensible to whoever owns the real checklist.
 **Generated phases live between `setup` and `uat`.** That is where genuine variation is.
 The gates at either end are universal.
 
+**Everything is editable, including the required parts.** A step can be renamed
+(`rec.renames`) or removed (`rec.removedSteps`); a phase can be renamed (`rec.phaseRenames`).
+Renaming changes words only — the key and the id never move, which is why a renamed step keeps
+its due date, owner, blockers and status, and why a renamed required phase is still recognised
+by the spine.
+
+Removing a step removes everything that hung off it. `ticketSummary()` filters to blockers
+whose step is still in the journey, because a blocker on a deleted step would otherwise hold a
+journey at risk over work nobody is doing. There is a test for exactly that, and it caught the
+bug.
+
 **Step keys are permanent.** `dueDates`, `overrides`, and `owners` are keyed off `k`. If
 you regenerate keys, every date and status a human set is silently orphaned. There is a
 test asserting the same plan keys identically twice.
@@ -133,10 +144,21 @@ whole design, so do not collapse them.
 it is the most valuable signal in the system. This is why `planOriginal` must be written on
 every generated journey and never overwritten.
 
-`/api/intake` therefore runs two passes: a cheap classification to get traits for retrieval,
-then the real design pass with references attached. Retrieval cannot happen before
-classification, and classification cannot happen before reading the document. If pass one
-fails, pass two still runs without references — a broken corpus must never block generation.
+**Generation is two calls, and this is not negotiable.** Pass one classifies and extracts;
+pass two designs the phases. Asking for both in one response failed reproducibly: the model
+spent its budget describing the engagement and ran out before finishing the phases — five of
+six came back empty while the rationale was three eloquent lines. It understood the customer
+perfectly and produced nothing usable.
+
+Two consequences follow, and both matter:
+
+- **`phases` is listed first in the requested JSON.** Fields are generated in the order they
+  are specified, so anything after the expensive part is what gets truncated.
+- **The design pass is told what has already been established.** It receives the classification
+  as given facts, so it does not re-derive them, and spends everything it has on phases.
+
+`coerceIntake({ ...parsed, ...facts })` merges with the classification pass winning on facts,
+so a design response that ran short on metadata still yields a fully classified journey.
 
 ## Truncated model responses
 
@@ -308,7 +330,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 162 tests, no network, no database, runs in about a second.
+`npm test` — 172 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

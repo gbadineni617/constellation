@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Check, Minus, CalendarDays, AlertTriangle, MessageSquarePlus, MessageSquare, Hash, Undo2 } from "lucide-react";
+import { Check, Minus, CalendarDays, AlertTriangle, MessageSquarePlus, MessageSquare, Hash, Undo2, Pencil, Trash2, X } from "lucide-react";
 import { C, STATUS, PEOPLE } from "@/lib/theme";
 import { dueState } from "@/lib/journey";
 import { TICKET_STATES, isOpen, ticketAge } from "@/lib/tickets";
@@ -12,10 +12,13 @@ const fmt = (iso) => {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 };
 
-export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, people }) {
+export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, onRename, onRemove, people }) {
   const [editDue, setEditDue] = useState(false);
   const [editOwner, setEditOwner] = useState(false);
   const [raising, setRaising] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(it.t);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [text, setText] = useState("");
   const [ref, setRef] = useState("");
 
@@ -58,13 +61,78 @@ export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, 
       </button>
 
       <div className="flex-1 min-w-0">
-        <div className="text-sm flex items-center gap-2 flex-wrap" style={{ color: it.s === "done" ? C.muted : C.text }}>
-          {it.t}
-          {it.custom && (
-            <span className="mono rounded px-1.5 shrink-0" style={{ fontSize: 9, background: C.violet + "26", color: C.violet }}>ADDED</span>
-          )}
-          {d?.state === "overdue" && <AlertTriangle size={12} style={{ color: C.pink, flexShrink: 0 }} />}
-        </div>
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && draft.trim()) { onRename(it.k, draft.trim()); setEditing(false); }
+                if (e.key === "Escape") { setDraft(it.t); setEditing(false); }
+              }}
+              className="flex-1 rounded px-2 py-1 text-sm"
+              style={{ background: C.bg, border: "1px solid " + C.violet + "77", color: C.text, outline: "none" }}
+            />
+            <button
+              onClick={() => { if (draft.trim()) { onRename(it.k, draft.trim()); setEditing(false); } }}
+              className="rounded p-1" style={{ color: C.teal }} title="Save"
+            >
+              <Check size={13} strokeWidth={3} />
+            </button>
+            <button
+              onClick={() => { setDraft(it.t); setEditing(false); }}
+              className="rounded p-1" style={{ color: C.faint }} title="Cancel"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        ) : (
+          <div className="text-sm flex items-center gap-2 flex-wrap group" style={{ color: it.s === "done" ? C.muted : C.text }}>
+            {it.t}
+            {it.custom && (
+              <span className="mono rounded px-1.5 shrink-0" style={{ fontSize: 9, background: C.violet + "26", color: C.violet }}>ADDED</span>
+            )}
+            {it.renamed && !it.custom && (
+              <span className="mono rounded px-1.5 shrink-0" style={{ fontSize: 9, background: C.line, color: C.faint }} title="Renamed from the standard wording">EDITED</span>
+            )}
+            {d?.state === "overdue" && <AlertTriangle size={12} style={{ color: C.pink, flexShrink: 0 }} />}
+
+            <span className="inline-flex items-center gap-1 row-actions ml-1">
+              <button
+                onClick={() => { setDraft(it.t); setEditing(true); }}
+                className="rounded p-1"
+                style={{ color: C.muted, border: "1px solid " + C.line, lineHeight: 0 }}
+                title="Rename this step"
+              >
+                <Pencil size={11} />
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="rounded p-1"
+                style={{ color: C.muted, border: "1px solid " + C.line, lineHeight: 0 }}
+                title="Remove this step"
+              >
+                <Trash2 size={11} />
+              </button>
+            </span>
+          </div>
+        )}
+
+        {confirmDelete && (
+          <div className="flex items-center gap-2 mt-1.5 rounded-lg px-2.5 py-1.5" style={{ background: C.pink + "12", border: "1px solid " + C.pink + "33" }}>
+            <span style={{ fontSize: 11, color: C.text }}>Remove this step from the journey?</span>
+            <button
+              onClick={() => { onRemove(it.k); setConfirmDelete(false); }}
+              className="rounded px-2 py-0.5" style={{ fontSize: 11, background: C.pink, color: C.bg }}
+            >
+              Remove
+            </button>
+            <button onClick={() => setConfirmDelete(false)} className="rounded px-2 py-0.5" style={{ fontSize: 11, color: C.muted }}>
+              Keep
+            </button>
+          </div>
+        )}
         {it.note && <div className="text-xs mt-0.5" style={{ color: C.faint }}>{it.note}</div>}
 
         {/* Deadline and blockers */}
