@@ -73,11 +73,12 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
       if (!id) throw new Error("The server did not start the job.");
 
       const startedAt = Date.now();
+      let nudged = false;
+
       for (;;) {
         await new Promise((r) => setTimeout(r, 1500));
 
-        // Give up eventually rather than polling a job that will never finish.
-        if (Date.now() - startedAt > 5 * 60 * 1000) {
+        if (Date.now() - startedAt > 6 * 60 * 1000) {
           throw new Error("That is taking unusually long. Try one document rather than several.");
         }
 
@@ -91,6 +92,20 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
           setState("done");
           onExtracted({ ...job.result, sourceName: label });
           return;
+        }
+
+        // A job still sitting at "queued" after 15 seconds means the invocation
+        // that should have run it died — a deploy mid-flight, or the platform
+        // reclaiming it. Nudge the retry endpoint once rather than waiting out
+        // the full timeout on a job that will never move.
+        if (!nudged && job.state === "queued" && Date.now() - startedAt > 15000) {
+          nudged = true;
+          setStep("Restarting");
+          fetch("/api/intake/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          }).catch(() => {});
         }
       }
     } catch (e) {

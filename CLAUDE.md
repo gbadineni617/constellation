@@ -159,11 +159,18 @@ scanning instead.
 Designing a journey takes ~45 seconds, and a request that does the work is a request that gets
 killed at the platform ceiling. So the work is split across three routes:
 
-- `POST /api/intake` — validates, writes a `jobs` row, kicks the worker without awaiting it,
-  returns a job id in ~200ms
-- `POST /api/intake/run` — the worker. Calls `runIntake()` in `lib/intake-worker.js` and
-  reports progress into the job row. Guarded by `CRON_SECRET` so it is not publicly runnable.
+- `POST /api/intake` — validates, writes a `jobs` row, responds in ~200ms, and keeps working
+  via `waitUntil()`. **The response returns before the work finishes, in the same invocation.**
 - `GET /api/intake/[id]` — polling. Cheap, called every 1.5s by the browser.
+- `POST /api/intake/run` — manual retry, for a job whose invocation died mid-flight. Refuses
+  anything not still `queued`, so it cannot double-generate.
+
+**Do not go back to kicking a second endpoint with a fire-and-forget `fetch`.** That was the
+first attempt and it fails intermittently: a serverless platform may freeze an invocation the
+moment it responds, so the outbound request often never left and jobs sat queued forever.
+`waitUntil` is the supported way to say "respond now, but do not freeze me yet". The client
+also nudges `/api/intake/run` once if a job is still queued after 15 seconds, so a lost
+invocation costs seconds rather than the whole timeout.
 
 No single request is ever long, so the ceiling stops applying.
 

@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * The worker. Does the slow part.
+ * Manual retry for a job that never finished.
  *
- * Called by /api/intake and by nothing else. It still has to finish inside the
- * platform's ceiling — but it is a separate invocation, so the user's upload is
- * never the request that gets killed, and they see progress the whole time.
+ * The normal path runs the work inside POST /api/intake via waitUntil. This exists
+ * for the case where that invocation died — a deploy mid-flight, a platform hiccup —
+ * leaving a job stuck at "queued". Safe to call: it refuses anything already running
+ * or finished, so it cannot double-generate.
  */
 export async function POST(req) {
   let body;
@@ -20,7 +21,6 @@ export async function POST(req) {
   const { id, secret } = body || {};
   if (!id) return Response.json({ error: "No job id." }, { status: 400 });
 
-  // If a secret is configured, require it — this endpoint should not be publicly runnable.
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
     return Response.json({ error: "Not allowed." }, { status: 403 });
   }
@@ -29,7 +29,7 @@ export async function POST(req) {
   if (!job) return Response.json({ error: "No such job." }, { status: 404 });
   if (job.state !== "queued") return Response.json({ ok: true, note: "already " + job.state });
 
-  await updateJob(id, { state: "running", step: "Starting", progress: 3 });
+  await updateJob(id, { state: "running", step: "Restarting", progress: 5 });
 
   try {
     const result = await runIntake({
@@ -39,7 +39,7 @@ export async function POST(req) {
     await updateJob(id, { state: "done", step: "Done", progress: 100, result });
     return Response.json({ ok: true });
   } catch (e) {
-    console.error("[intake worker] failed:", e);
+    console.error("[intake retry] failed:", e);
     await updateJob(id, { state: "failed", error: e.message || "Generation failed.", progress: 100 });
     return Response.json({ error: e.message }, { status: 500 });
   }

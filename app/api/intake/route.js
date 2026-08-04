@@ -1,19 +1,24 @@
+import { waitUntil } from "@vercel/functions";
 import { createJob, updateJob, pruneJobs } from "@/lib/db";
+import { runIntake } from "@/lib/intake-worker";
 import { MAX_FILES, MAX_FILE_BYTES } from "@/lib/extract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+/** The response returns in ~200ms; this covers the background work that outlives it. */
+export const maxDuration = 300;
 
 /**
- * Accept the upload and hand it to a background job.
+ * Accept the upload, respond immediately, and keep working.
  *
- * Designing a journey takes ~45 seconds, which exceeds the platform's function
- * ceiling — a request that does the work is a request that gets killed. So this
- * returns a job id immediately and the real work happens in /api/intake/run,
- * with the browser polling /api/intake/[id].
+ * Designing a journey takes ~45 seconds, which exceeds the ceiling for a request
+ * the user is waiting on. The first attempt at this kicked a second endpoint with
+ * a fire-and-forget fetch — but a serverless platform is entitled to freeze an
+ * invocation the moment it responds, so the kick often never arrived and jobs sat
+ * queued forever.
  *
- * No single request is ever long, so the ceiling stops applying.
+ * `waitUntil` is the supported way to say "respond now, but do not freeze me yet".
+ * One invocation, no inter-function hop, nothing to lose in between.
  */
 export async function POST(req) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -49,16 +54,19 @@ export async function POST(req) {
     return Response.json({ error: "Could not start that. Is the database connected?" }, { status: 500 });
   }
 
-  // Kick the worker without waiting for it. The response must return now.
-  const origin = new URL(req.url).origin;
-  fetch(origin + "/api/intake/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, secret: process.env.CRON_SECRET || "" }),
-  }).catch((e) => {
-    console.error("[intake] worker kick failed:", e.message);
-    updateJob(id, { state: "failed", error: "Could not start the worker." }).catch(() => {});
-  });
+  const work = (async () => {
+    try {
+      await updateJob(id, { state: "running", step: "Reading your documents", progress: 5 });
+      const result = await runIntake({ files, onProgress: (p) => updateJob(id, p) });
+      await updateJob(id, { state: "done", step: "Done", progress: 100, result });
+    } catch (e) {
+      console.error("[intake] job " + id + " failed:", e);
+      await updateJob(id, { state: "failed", error: e.message || "Generation failed.", progress: 100 }).catch(() => {});
+    }
+  })();
+
+  // Locally there is no platform to tell, so just let it run.
+  try { waitUntil(work); } catch { /* not on Vercel */ }
 
   pruneJobs(24).catch(() => {});
 
