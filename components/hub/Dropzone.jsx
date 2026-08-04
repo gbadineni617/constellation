@@ -47,20 +47,52 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
   const [pasting, setPasting] = useState(false);
   const [pasted, setPasted] = useState("");
   const [skipped, setSkipped] = useState([]);
+  const [step, setStep] = useState("");
+  const [pct, setPct] = useState(0);
   const inputRef = useRef(null);
 
+  /**
+   * Start a job and follow it.
+   *
+   * The upload returns a job id immediately rather than the finished plan,
+   * because designing a journey takes longer than a request is allowed to.
+   * Polling also means we can say what is happening — 45 seconds of spinner
+   * reads as broken even when it is working.
+   */
   const send = async (payload, label) => {
     setState("reading"); setErr(""); setResult(null); setSource(label);
+    setStep("Uploading"); setPct(2);
+
     try {
       const res = await fetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await readJson(res);
-      setResult(data);
-      setState("done");
-      onExtracted({ ...data, sourceName: label });
+      const { id } = await readJson(res);
+      if (!id) throw new Error("The server did not start the job.");
+
+      const startedAt = Date.now();
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1500));
+
+        // Give up eventually rather than polling a job that will never finish.
+        if (Date.now() - startedAt > 5 * 60 * 1000) {
+          throw new Error("That is taking unusually long. Try one document rather than several.");
+        }
+
+        const job = await readJson(await fetch("/api/intake/" + id));
+        if (job.step) setStep(job.step);
+        if (typeof job.progress === "number") setPct(job.progress);
+
+        if (job.state === "failed") throw new Error(job.error || "Generation failed.");
+        if (job.state === "done") {
+          setResult(job.result);
+          setState("done");
+          onExtracted({ ...job.result, sourceName: label });
+          return;
+        }
+      }
     } catch (e) {
       setErr(e.message || String(e));
       setState("error");
@@ -146,8 +178,16 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
           <div className="flex-1 min-w-0">
             {state === "reading" ? (
               <>
-                <div className="text-sm font-medium">Reading {source}…</div>
-                <div className="text-xs" style={{ color: C.faint }}>Reading them together — goals, team, dates, and what is already done.</div>
+                <div className="text-sm font-medium">{step || "Reading"} · {source}</div>
+                <div className="mt-1.5 rounded-full overflow-hidden" style={{ height: 3, background: C.line }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: Math.max(2, pct) + "%", background: "linear-gradient(90deg," + C.teal + "," + C.violet + ")", transition: "width .6s ease" }}
+                  />
+                </div>
+                <div className="text-xs mt-1" style={{ color: C.faint }}>
+                  This takes up to a minute. You can leave the page open.
+                </div>
               </>
             ) : state === "done" ? (
               <>

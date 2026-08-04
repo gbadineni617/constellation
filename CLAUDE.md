@@ -154,6 +154,28 @@ Regex trimming was tried first and is a trap. Every fix creates a new dangling c
 string leaves an orphaned key, removing the key leaves an orphaned comma. Track validity while
 scanning instead.
 
+## The job queue
+
+Designing a journey takes ~45 seconds, and a request that does the work is a request that gets
+killed at the platform ceiling. So the work is split across three routes:
+
+- `POST /api/intake` — validates, writes a `jobs` row, kicks the worker without awaiting it,
+  returns a job id in ~200ms
+- `POST /api/intake/run` — the worker. Calls `runIntake()` in `lib/intake-worker.js` and
+  reports progress into the job row. Guarded by `CRON_SECRET` so it is not publicly runnable.
+- `GET /api/intake/[id]` — polling. Cheap, called every 1.5s by the browser.
+
+No single request is ever long, so the ceiling stops applying.
+
+**Progress is not decoration.** 45 seconds of undifferentiated spinner reads as broken even
+when it is working, so the worker reports named steps ("Finding comparable journeys",
+"Designing the journey") and the design pass ticks progress as tokens arrive rather than
+guessing at a duration.
+
+Generation lives in `lib/intake-worker.js`, not in a route, so there is exactly one
+implementation. If a second caller ever needs it — a bulk import, a retry — it calls the same
+function.
+
 ## Long requests and the platform ceiling
 
 Vercel kills a function at 60 seconds and returns **an HTML error page**, not JSON. That
@@ -162,6 +184,7 @@ produced a "Unexpected token 'A'" in the UI, which pointed at the wrong problem 
 Two rules follow, and both matter:
 
 - **Never call `res.json()` directly.** Use `readJson()` in `lib/loose-json.js    recover a truncated model response. Pure.
+lib/intake-worker.js the slow part: read documents, retrieve, design a journey.
 lib/http.js`, which reads the
   body once and reports the real cause — a 504 says the request timed out, not that a
   character was unexpected.
@@ -278,7 +301,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 155 tests, no network, no database, runs in about a second.
+`npm test` — 162 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

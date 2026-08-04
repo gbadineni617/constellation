@@ -52,3 +52,27 @@ create table if not exists documents (
 
 create index if not exists documents_journey_idx on documents (journey_id);
 create index if not exists documents_created_idx on documents (created_at desc);
+
+-- Work that takes longer than a request should.
+--
+-- Designing a journey is ~45 seconds of model time, which exceeds the platform's
+-- function ceiling. So the upload returns immediately with a job id, generation
+-- happens in a separate invocation, and the browser polls. No single request is
+-- ever long, so the ceiling stops applying.
+--
+-- The progress column is not decoration: 45 seconds of spinner reads as broken
+-- even when it is working.
+create table if not exists jobs (
+  id          text primary key,
+  kind        text not null,                  -- intake
+  state       text not null default 'queued', -- queued | running | done | failed
+  step        text,                           -- what it is doing, for the UI
+  progress    integer not null default 0,     -- 0-100
+  payload     jsonb,                          -- the request, for the worker
+  result      jsonb,                          -- the finished plan
+  error       text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists jobs_created_idx on jobs (created_at desc);
