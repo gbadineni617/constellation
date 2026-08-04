@@ -1,9 +1,15 @@
 import { getJob, updateJob } from "@/lib/db";
 import { runIntake } from "@/lib/intake-worker";
+import { json, preflight, authorised, unauthorised } from "@/lib/cors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+/** Pre-flight, so a custom app on a Smartcat domain can call this at all. */
+export function OPTIONS(req) {
+  return preflight(req);
+}
 
 /**
  * Manual retry for a job that never finished.
@@ -14,20 +20,22 @@ export const maxDuration = 300;
  * or finished, so it cannot double-generate.
  */
 export async function POST(req) {
+  if (!authorised(req)) return unauthorised(req);
+
   let body;
   try { body = await req.json(); }
-  catch { return Response.json({ error: "Malformed request." }, { status: 400 }); }
+  catch { return json(req, { error: "Malformed request." }, { status: 400 }); }
 
   const { id, secret } = body || {};
-  if (!id) return Response.json({ error: "No job id." }, { status: 400 });
+  if (!id) return json(req, { error: "No job id." }, { status: 400 });
 
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return Response.json({ error: "Not allowed." }, { status: 403 });
+    return json(req, { error: "Not allowed." }, { status: 403 });
   }
 
   const job = await getJob(id);
-  if (!job) return Response.json({ error: "No such job." }, { status: 404 });
-  if (job.state !== "queued") return Response.json({ ok: true, note: "already " + job.state });
+  if (!job) return json(req, { error: "No such job." }, { status: 404 });
+  if (job.state !== "queued") return json(req, { ok: true, note: "already " + job.state });
 
   await updateJob(id, { state: "running", step: "Restarting", progress: 5 });
 
@@ -37,10 +45,10 @@ export async function POST(req) {
       onProgress: (p) => updateJob(id, p),
     });
     await updateJob(id, { state: "done", step: "Done", progress: 100, result });
-    return Response.json({ ok: true });
+    return json(req, { ok: true });
   } catch (e) {
     console.error("[intake retry] failed:", e);
     await updateJob(id, { state: "failed", error: e.message || "Generation failed.", progress: 100 });
-    return Response.json({ error: e.message }, { status: 500 });
+    return json(req, { error: e.message }, { status: 500 });
   }
 }

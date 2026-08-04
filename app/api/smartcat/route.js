@@ -10,7 +10,7 @@ export function OPTIONS(req) {
 }
 
 /** Is Smartcat connected, and what can it see? */
-export async function GET() {
+export async function GET(req) {
   if (!authorised(req)) return unauthorised(req);
 
   const result = await testConnection();

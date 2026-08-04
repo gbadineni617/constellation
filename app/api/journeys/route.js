@@ -9,7 +9,7 @@ export function OPTIONS(req) {
   return preflight(req);
 }
 
-export async function GET() {
+export async function GET(req) {
   if (!authorised(req)) return unauthorised(req);
 
   try {

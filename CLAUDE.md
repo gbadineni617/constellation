@@ -283,9 +283,18 @@ Two things that requires:
   answers "is this our app", not "who is this person" — real per-user auth arrives with the
   workspace session.
 
-Every API route calls `authorised(req)` first and returns via `json(req, ...)` rather than
-`Response.json`, and every route exports `OPTIONS` for the pre-flight. If you add a route,
-do all three or it will fail from a custom app while working perfectly in the browser.
+Every API route must do four things, and `test/routes.test.js` enforces all of them
+statically:
+
+1. export `OPTIONS` for the pre-flight
+2. call `authorised(req)` before anything else
+3. return via `json(req, ...)`, never `Response.json`
+4. **declare `req` in the signature if the body uses it**
+
+That last one shipped broken. A handler declared `GET()` with no parameter while calling
+`authorised(req)` on its first line — it compiled, passed every other test, and returned a
+500 for every request in production. The static checks exist because this class of bug is
+invisible to normal tests: nothing imports a route handler, so nothing runs it.
 
 **The open question that decides the end state:** can a custom app persist its own data — a
 JSON blob per workspace — through any existing Smartcat API? If yes, Postgres goes away and
@@ -355,7 +364,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 182 tests, no network, no database, runs in about a second.
+`npm test` — 188 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real
