@@ -5,6 +5,7 @@ import { coerceJourneyPlan, ANCHORS, MAX_STEPS_PER_PHASE } from "@/lib/spine";
 import { REVIEW_MODEL_IDS, SPECIALIZATIONS, TURNAROUNDS, CERTIFICATIONS, PAIR_STATE_IDS } from "@/lib/marketplace";
 import { findReferences, saveDocument } from "@/lib/db";
 import { pickReferences, formatReferences, commonPatterns, formatPatterns } from "@/lib/corpus";
+import { parseLoose } from "@/lib/loose-json";
 
 export const runtime = "nodejs";
 /**
@@ -186,9 +187,13 @@ export async function POST(req) {
 
   const messageContent = [...read.blocks, { type: "text", text: read.header + INSTRUCTIONS }];
 
+  const rawText = (msg) =>
+    (msg.content || []).map((c) => (c.type === "text" ? c.text : "")).join("").trim();
+
   const parseJson = (msg) => {
-    const text = (msg.content || []).map((c) => (c.type === "text" ? c.text : "")).join("").trim();
-    return JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
+    const out = parseLoose(rawText(msg));
+    if (!out.ok) throw new Error("unparseable");
+    return out.value;
   };
 
   try {
@@ -251,17 +256,29 @@ export async function POST(req) {
      */
     const stream = await client.messages.stream({
       model: process.env.CONSTELLATION_MODEL || "claude-sonnet-5",
-      // A designed journey is ~9 phases of ~5 steps. That is well under 4000 tokens.
-      // The old 8000 invited padding, and every token is wall-clock time against
-      // the platform's function ceiling.
-      max_tokens: 4000,
+      // Enough headroom for a long journey. Cutting this to 4000 truncated dense
+      // documents mid-JSON — the model does not know it is running out of room,
+      // so a tight cap silently corrupts the output. parseLoose() recovers the
+      // remaining cases rather than this number being guessed ever tighter.
+      max_tokens: 8000,
       messages: [{ role: "user", content: messageContent }],
     });
     const msg = await stream.finalMessage();
 
-    let parsed;
-    try { parsed = parseJson(msg); }
-    catch { return Response.json({ error: "Could not make sense of that document." }, { status: 422 }); }
+    // A dense document can run the response past max_tokens, leaving JSON that is
+    // valid up to the cut. Recovering the complete portion beats discarding a
+    // nearly-finished journey over a missing brace.
+    const attempt = parseLoose(rawText(msg));
+    if (!attempt.ok) {
+      console.error("[intake] unparseable response, first 400 chars:", rawText(msg).slice(0, 400));
+      return Response.json(
+        { error: "The model's response could not be read. Try one document rather than several." },
+        { status: 422 }
+      );
+    }
+    if (attempt.repaired) console.warn("[intake] response was truncated; recovered the complete portion");
+    const parsed = attempt.value;
+    const truncated = attempt.repaired || msg.stop_reason === "max_tokens";
 
     // The model proposed. Code decides what is allowed through — both for the
     // intake fields and, more importantly, for the shape of the journey itself.
@@ -282,6 +299,7 @@ export async function POST(req) {
       ...intake,
       plan,
       files: read.manifest,
+      truncated: truncated || salvaged,
       claims: plan.claims,
       unevidenced: plan.unevidenced,
       references: references.map(({ rec, ...meta }) => meta),

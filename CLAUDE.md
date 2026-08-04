@@ -138,6 +138,22 @@ then the real design pass with references attached. Retrieval cannot happen befo
 classification, and classification cannot happen before reading the document. If pass one
 fails, pass two still runs without references — a broken corpus must never block generation.
 
+## Truncated model responses
+
+`lib/loose-json.js`. A dense document can run the design pass past `max_tokens`, leaving JSON
+that is valid up to the cut and garbage after it. Discarding the whole response loses a
+nearly-complete journey over a missing brace, so `parseLoose()` scans the text tracking whether
+the document is closeable at each point, then closes it at the last such position.
+
+Two things it will not do, both deliberate: it never invents a value for a key that was cut
+before its value (an unanswered key is dropped, so a half-written field cannot be mistaken for
+a real one), and it fails honestly on text that was never JSON — an HTML error page must never
+be quietly turned into an object.
+
+Regex trimming was tried first and is a trap. Every fix creates a new dangling case: a cut
+string leaves an orphaned key, removing the key leaves an orphaned comma. Track validity while
+scanning instead.
+
 ## Long requests and the platform ceiling
 
 Vercel kills a function at 60 seconds and returns **an HTML error page**, not JSON. That
@@ -145,7 +161,8 @@ produced a "Unexpected token 'A'" in the UI, which pointed at the wrong problem 
 
 Two rules follow, and both matter:
 
-- **Never call `res.json()` directly.** Use `readJson()` in `lib/http.js`, which reads the
+- **Never call `res.json()` directly.** Use `readJson()` in `lib/loose-json.js    recover a truncated model response. Pure.
+lib/http.js`, which reads the
   body once and reports the real cause — a 504 says the request timed out, not that a
   character was unexpected.
 - **Both model routes stream** via `client.messages.stream()` rather than `create()`. A
@@ -261,7 +278,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 144 tests, no network, no database, runs in about a second.
+`npm test` — 155 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

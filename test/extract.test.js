@@ -148,7 +148,7 @@ const fakeRes = (status, body, ok = status < 400) => ({
 test("a timeout reports a timeout, not a parse error", async () => {
   await assert.rejects(
     () => readJson(fakeRes(504, "<html>An error occurred</html>")),
-    /took too long/,
+    /longer than the server allows/,
     "the user needs to know the request was killed, not that a character was unexpected"
   );
 });
