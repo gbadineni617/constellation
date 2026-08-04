@@ -267,6 +267,31 @@ turnaround and "None" certification are not filters.
 `sourcingBrief()` assembles the whole roster into the message an FDE would otherwise type by
 hand, and covers only pairs that still need sourcing. Never ask for linguists you already have.
 
+## Being called from a Smartcat custom app
+
+`lib/cors.js`. Custom apps are Vue and front-end only — no server, so nothing that holds a
+secret or a database connection can live in one. For now this Vercel deployment stays as the
+backend and the custom app calls it.
+
+Two things that requires:
+
+- **CORS.** The app runs on a Smartcat domain calling a Vercel domain, so the browser blocks
+  it by default. `corsHeaders()` echoes only recognised origins — never `*`. An open API on a
+  public URL is an open API regardless of who was meant to use it.
+- **A shared secret.** `CONSTELLATION_KEY` on the server, `NEXT_PUBLIC_CONSTELLATION_KEY` in
+  the client. Unset means the check is skipped, so local development is unaffected. This
+  answers "is this our app", not "who is this person" — real per-user auth arrives with the
+  workspace session.
+
+Every API route calls `authorised(req)` first and returns via `json(req, ...)` rather than
+`Response.json`, and every route exports `OPTIONS` for the pre-flight. If you add a route,
+do all three or it will fail from a custom app while working perfectly in the browser.
+
+**The open question that decides the end state:** can a custom app persist its own data — a
+JSON blob per workspace — through any existing Smartcat API? If yes, Postgres goes away and
+the app is self-contained. If no, the backend stays external, and journeys live on a personal
+Neon account rather than in the platform. Worth answering before anyone writes Vue.
+
 ## Running inside Smartcat
 
 `lib/surfaces.js` + `lib/embed.js`. Each phase declares a surface, and the phase button
@@ -330,7 +355,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 172 tests, no network, no database, runs in about a second.
+`npm test` — 182 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

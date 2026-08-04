@@ -5,7 +5,7 @@ import React, { useState } from "react";
 import { Zap, Sparkles, AlertCircle, Mail, MessageSquare, Copy } from "lucide-react";
 
 import { C, RISK } from "@/lib/theme";
-import { readJson } from "@/lib/http";
+import { readJson, apiFetch } from "@/lib/http";
 
 import { PEOPLE } from "@/lib/theme";
 
@@ -89,7 +89,7 @@ export function AgentPanel({ rec, risk }) {
 
     try {
       // The key lives on the server. The browser never sees it.
-      const res = await fetch("/api/draft", {
+      const res = await apiFetch("/api/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),

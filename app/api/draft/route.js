@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { json, preflight, authorised, unauthorised } from "@/lib/cors";
 
 export const runtime = "nodejs";
+
+/** Pre-flight, so a custom app on a Smartcat domain can call this at all. */
+export function OPTIONS(req) {
+  return preflight(req);
+}
 export const maxDuration = 30;
 
 /**
@@ -12,21 +18,23 @@ export const maxDuration = 30;
  * already-decided situation into words.
  */
 export async function POST(req) {
+  if (!authorised(req)) return unauthorised(req);
+
   if (!process.env.ANTHROPIC_API_KEY) {
-    return Response.json({ error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
+    return json(req, { error: "ANTHROPIC_API_KEY is not set on the server." }, { status: 500 });
   }
 
   let prompt;
   try {
     ({ prompt } = await req.json());
   } catch {
-    return Response.json({ error: "Malformed request body." }, { status: 400 });
+    return json(req, { error: "Malformed request body." }, { status: 400 });
   }
   if (typeof prompt !== "string" || !prompt.trim()) {
-    return Response.json({ error: "Missing prompt." }, { status: 400 });
+    return json(req, { error: "Missing prompt." }, { status: 400 });
   }
   if (prompt.length > 12000) {
-    return Response.json({ error: "Prompt too large." }, { status: 413 });
+    return json(req, { error: "Prompt too large." }, { status: 413 });
   }
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -52,7 +60,7 @@ export async function POST(req) {
       parsed = { subject: "", body: clean, why: "" };
     }
 
-    return Response.json({
+    return json(req, {
       subject: String(parsed.subject || ""),
       body: String(parsed.body || ""),
       why: String(parsed.why || ""),
@@ -69,6 +77,6 @@ export async function POST(req) {
       : status === 404 ? "The model name is wrong: " + detail
       : status === 400 ? "The request was rejected: " + detail
       : "Could not reach the model: " + detail;
-    return Response.json({ error: message }, { status: status >= 400 && status < 600 ? status : 502 });
+    return json(req, { error: message }, { status: status >= 400 && status < 600 ? status : 502 });
   }
 }

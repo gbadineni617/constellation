@@ -3,7 +3,7 @@
 import React, { useState, useRef } from "react";
 import { Upload, Sparkles, Check, AlertCircle, FileText, ClipboardPaste, X } from "lucide-react";
 import { C } from "@/lib/theme";
-import { readJson } from "@/lib/http";
+import { readJson, apiFetch } from "@/lib/http";
 import { LABELS } from "@/lib/intake";
 import { ProgressReview } from "./ProgressReview";
 
@@ -64,7 +64,7 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
     setStep("Uploading"); setPct(2);
 
     try {
-      const res = await fetch("/api/intake", {
+      const res = await apiFetch("/api/intake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -82,7 +82,7 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
           throw new Error("That is taking unusually long. Try one document rather than several.");
         }
 
-        const job = await readJson(await fetch("/api/intake/" + id));
+        const job = await readJson(await apiFetch("/api/intake/" + id));
         if (job.step) setStep(job.step);
         if (typeof job.progress === "number") setPct(job.progress);
 
@@ -101,7 +101,7 @@ export function Dropzone({ onExtracted, onUseExample, onProgressChange }) {
         if (!nudged && job.state === "queued" && Date.now() - startedAt > 15000) {
           nudged = true;
           setStep("Restarting");
-          fetch("/api/intake/run", {
+          apiFetch("/api/intake/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id }),
