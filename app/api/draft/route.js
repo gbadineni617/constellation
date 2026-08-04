@@ -32,11 +32,14 @@ export async function POST(req) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   try {
-    const msg = await client.messages.create({
+    // Streamed for the same reason as /api/intake: a long single response can
+    // exceed the platform's function ceiling, and streaming keeps bytes moving.
+    const stream = await client.messages.stream({
       model: process.env.CONSTELLATION_MODEL || "claude-sonnet-5",
       max_tokens: 1000,
       messages: [{ role: "user", content: prompt }],
     });
+    const msg = await stream.finalMessage();
 
     const text = (msg.content || []).map((c) => (c.type === "text" ? c.text : "")).join("").trim();
     const clean = text.replace(/```json/g, "").replace(/```/g, "").trim();

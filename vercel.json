@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "app/api/intake/route.js": { "maxDuration": 60 },
+    "app/api/draft/route.js": { "maxDuration": 60 },
+    "app/api/smartcat/health/route.js": { "maxDuration": 60 }
+  }
+}

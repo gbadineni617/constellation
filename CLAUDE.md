@@ -138,6 +138,24 @@ then the real design pass with references attached. Retrieval cannot happen befo
 classification, and classification cannot happen before reading the document. If pass one
 fails, pass two still runs without references — a broken corpus must never block generation.
 
+## Long requests and the platform ceiling
+
+Vercel kills a function at 60 seconds and returns **an HTML error page**, not JSON. That
+produced a "Unexpected token 'A'" in the UI, which pointed at the wrong problem entirely.
+
+Two rules follow, and both matter:
+
+- **Never call `res.json()` directly.** Use `readJson()` in `lib/http.js`, which reads the
+  body once and reports the real cause — a 504 says the request timed out, not that a
+  character was unexpected.
+- **Both model routes stream** via `client.messages.stream()` rather than `create()`. A
+  designed journey is thousands of output tokens and waiting for all of them before
+  responding exceeded the ceiling.
+
+`max_tokens` on the design pass is 4000, not 8000. The cap is not free — the model fills
+the space it is given, and every token is wall-clock time. If generation starts truncating,
+raise it deliberately rather than by default.
+
 ## Uploads, and starting mid-journey
 
 `lib/extract.js` reads several files at once — PDF, Word, Excel, text, CSV, subtitles, email,
@@ -243,7 +261,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 139 tests, no network, no database, runs in about a second.
+`npm test` — 144 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

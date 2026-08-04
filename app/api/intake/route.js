@@ -123,6 +123,8 @@ Each phase looks like:
   ]
 }
 
+Be economical. Every phase should earn its place and every step should be one short line. Do not restate the customer's situation back at length — the blurb is one or two sentences, not a paragraph.
+
 Rules for steps:
 - At most ${MAX_STEPS_PER_PHASE} per phase. Three to six is usually right.
 - Use real names from the document as owners. If it is Smartcat's job, put "Smartcat".
@@ -205,7 +207,7 @@ export async function POST(req) {
       const corpus = await findReferences();
       if (!corpus.length) throw new Error("empty corpus — classification would buy nothing");
 
-      const classify = await client.messages.create({
+      const classifyStream = await client.messages.stream({
         model: process.env.CONSTELLATION_MODEL || "claude-sonnet-5",
         max_tokens: 400,
         messages: [{
@@ -213,7 +215,7 @@ export async function POST(req) {
           content: [...read.blocks, { type: "text", text: read.header + CLASSIFY_INSTRUCTIONS }],
         }],
       });
-      const traits = parseJson(classify);
+      const traits = parseJson(await classifyStream.finalMessage());
       const pool = corpus;
 
       // Two ways the corpus contributes, and they scale differently.
@@ -236,11 +238,26 @@ export async function POST(req) {
       console.error("classification / retrieval skipped:", e.message);
     }
 
-    const msg = await client.messages.create({
+    /**
+     * Streamed, not awaited whole.
+     *
+     * Designing a journey is thousands of output tokens, and waiting for all of
+     * them before responding put the request past Vercel's 60-second ceiling —
+     * a hard 504 with no result. Streaming means bytes arrive continuously, the
+     * platform never sees an idle request, and the ceiling stops applying.
+     *
+     * We still assemble the whole JSON before validating it: a half-parsed
+     * journey plan is worse than none, and coerceJourneyPlan needs the full object.
+     */
+    const stream = await client.messages.stream({
       model: process.env.CONSTELLATION_MODEL || "claude-sonnet-5",
-      max_tokens: 8000,
+      // A designed journey is ~9 phases of ~5 steps. That is well under 4000 tokens.
+      // The old 8000 invited padding, and every token is wall-clock time against
+      // the platform's function ceiling.
+      max_tokens: 4000,
       messages: [{ role: "user", content: messageContent }],
     });
+    const msg = await stream.finalMessage();
 
     let parsed;
     try { parsed = parseJson(msg); }
