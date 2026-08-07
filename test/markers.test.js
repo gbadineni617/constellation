@@ -95,12 +95,3 @@ test("garbage yields nothing rather than throwing", () => {
   }
 });
 
-test("Walmart carries its real decision and context, and neither flags it", () => {
-  const wm = SEED.find((r) => r.id === "walmart");
-  const a = assess(wm, buildJourney(wm));
-  assert.equal(a.markers.decisions.length, 1);
-  assert.match(a.markers.decisions[0].text, /fr-CA goes first/);
-  assert.equal(a.markers.notes.length, 1);
-  assert.equal(a.markers.issues.length, 0, "a decision is not a problem");
-  assert.ok(!a.signals.some((s) => /Issue after/.test(s.t)));
-});

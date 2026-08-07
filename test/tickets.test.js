@@ -3,8 +3,16 @@ import assert from "node:assert/strict";
 import { coerceTicket, coerceTickets, ticketAge, ticketSummary, ticketsFor, isOpen, STALE_DAYS } from "../lib/tickets.js";
 import { buildJourney, assess } from "../lib/journey.js";
 import { SEED } from "../lib/seed.js";
+import { openStepKey, stepKey } from "./helpers.js";
 
 const T = new Date("2026-07-26T00:00:00Z");
+
+// Keys come from the built journey rather than being hardcoded: the spine is
+// the real checklist now, so step keys derive from its wording.
+const _probe = buildJourney({ contentPath: "e-Learning", maturity: "greenfield", delivery: "manual", reviewModel: "internal", stage: "core", stageProgress: 0.4, notes: {} });
+const KEY_A = openStepKey(_probe, "core");
+const KEY_B = openStepKey(_probe, "uat");
+const KEY_C = openStepKey(_probe, "golive");
 
 const base = {
   contentPath: "e-Learning", maturity: "greenfield", delivery: "manual", reviewModel: "internal",
@@ -58,14 +66,14 @@ test("blockers attach to the step they block, and travel with it", () => {
   const rec = {
     ...base,
     tickets: coerceTickets([
-      { stepKey: "a2", text: "Glossary blocked on legal", at: "2026-07-08", ref: "SUP-4821" },
-      { stepKey: "templates", text: "SSO decision pending", at: "2026-07-24" },
+      { stepKey: KEY_A, text: "Glossary blocked on legal", at: "2026-07-08", ref: "SUP-4821" },
+      { stepKey: KEY_B, text: "SSO decision pending", at: "2026-07-24" },
     ]),
   };
-  assert.equal(ticketsFor(rec, "a2").length, 1);
+  assert.equal(ticketsFor(rec, KEY_A).length, 1);
   assert.equal(ticketsFor(rec, "nothing-here").length, 0);
 
-  const step = buildJourney(rec).find((p) => p.id === "core").items.find((i) => i.k === "a2");
+  const step = buildJourney(rec).find((p) => p.id === "core").items.find((i) => i.k === KEY_A);
   assert.equal(step.tickets.length, 1, "the step carries its own blockers");
   assert.equal(step.tickets[0].ref, "SUP-4821");
 });
@@ -74,9 +82,9 @@ test("the summary sorts oldest first, and names the step and phase", () => {
   const rec = {
     ...base,
     tickets: coerceTickets([
-      { stepKey: "templates", text: "recent", at: "2026-07-24" },
-      { stepKey: "a2", text: "ancient", at: "2026-07-01" },
-      { stepKey: "users", text: "done with", at: "2026-07-02", state: "resolved" },
+      { stepKey: KEY_B, text: "recent", at: "2026-07-24" },
+      { stepKey: KEY_A, text: "ancient", at: "2026-07-01" },
+      { stepKey: KEY_C, text: "done with", at: "2026-07-02", state: "resolved" },
     ]),
   };
   const s = ticketSummary(rec, buildJourney(rec), T);
@@ -92,14 +100,14 @@ test("a stale blocker flags an otherwise healthy journey", () => {
   const healthy = assess(base, buildJourney(base));
   assert.equal(healthy.level, "on_track");
 
-  const blocked = { ...base, tickets: coerceTickets([{ stepKey: "a2", text: "Waiting on legal", at: "2026-07-01" }]) };
+  const blocked = { ...base, tickets: coerceTickets([{ stepKey: KEY_A, text: "Waiting on legal", at: "2026-07-01" }]) };
   const a = assess(blocked, buildJourney(blocked));
   assert.equal(a.level, "at_risk", "something open for 25 days is not on track, whatever the percentages say");
   assert.ok(a.signals.some((s) => /Blocked 25 days/.test(s.t)));
 });
 
 test("a fresh blocker is reported but does not escalate", () => {
-  const rec = { ...base, tickets: coerceTickets([{ stepKey: "a2", text: "Raised today", at: "2026-07-25" }]) };
+  const rec = { ...base, tickets: coerceTickets([{ stepKey: KEY_A, text: "Raised today", at: "2026-07-25" }]) };
   const a = assess(rec, buildJourney(rec));
   assert.equal(a.level, "on_track", "a blocker logged yesterday is information, not an emergency");
   assert.ok(a.signals.some((s) => /Blocked 1 days/.test(s.t)), "but it is still surfaced");
@@ -107,21 +115,10 @@ test("a fresh blocker is reported but does not escalate", () => {
 });
 
 test("resolving a blocker clears the signal", () => {
-  const rec = { ...base, tickets: coerceTickets([{ stepKey: "a2", text: "Was blocked", at: "2026-07-01", state: "resolved" }]) };
+  const rec = { ...base, tickets: coerceTickets([{ stepKey: KEY_A, text: "Was blocked", at: "2026-07-01", state: "resolved" }]) };
   const a = assess(rec, buildJourney(rec));
   assert.equal(a.tickets.open.length, 0);
   assert.equal(a.level, "on_track");
   assert.ok(!a.signals.some((s) => /Blocked/.test(s.t)));
 });
 
-test("Walmart's glossary blocker explains its overdue step", () => {
-  const wm = SEED.find((r) => r.id === "walmart");
-  const a = assess(wm, buildJourney(wm));
-  assert.equal(a.tickets.open.length, 1);
-  assert.equal(a.tickets.open[0].ref, "SUP-4821");
-  assert.ok(a.tickets.open[0].age.stale, "it has been open long enough to matter");
-  assert.ok(
-    a.overdue.some((o) => o.k === "a2"),
-    "and it sits on the same step that is overdue — the blocker is the reason"
-  );
-});

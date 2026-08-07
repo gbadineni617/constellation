@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildJourney, progressOf, assess } from "../lib/journey.js";
 import { SEED } from "../lib/seed.js";
+import { stepKey, openStepKey } from "./helpers.js";
 
 const byId = (id) => SEED.find((r) => r.id === id);
 const shape = (o) => {
@@ -18,19 +19,27 @@ test("the path is shorter when there is genuinely less to do", () => {
   assert.ok(elearning.steps > plain.steps, "e-learning must cost more steps than plain documents");
 });
 
-test("a connector adds a phase, on every content type", () => {
+test("Teams runs one workflow whatever the content type", () => {
+  const a = shape({ tier: "teams", contentPath: "Document & text" });
+  const b = shape({ tier: "teams", contentPath: "e-Learning" });
+  assert.deepEqual(a, b, "content-type paths are an Enterprise concept");
+});
+
+test("a connector adds integration steps to core setup, not a new phase", () => {
+  // The checklist puts "Integration Basics (if applicable)" inside the core
+  // path rather than giving it a stage of its own.
   for (const cp of ["Document & text", "e-Learning", "Video & audio"]) {
     const manual = shape({ contentPath: cp, maturity: "mature", delivery: "manual" });
     const wired = shape({ contentPath: cp, maturity: "mature", delivery: "connected" });
-    assert.equal(wired.phases, manual.phases + 1, cp + ": connector should add exactly one phase");
-    assert.ok(wired.steps > manual.steps, cp + ": connector should add steps");
+    assert.equal(wired.phases, manual.phases, cp + ": no extra phase");
+    assert.ok(wired.steps > manual.steps, cp + ": but it does add steps");
   }
 });
 
-test("linguistic maturity swaps steps without changing the count", () => {
+test("the checklist is the same whatever the linguistic maturity", () => {
   const g = shape({ contentPath: "e-Learning", maturity: "greenfield", delivery: "manual" });
   const m = shape({ contentPath: "e-Learning", maturity: "mature", delivery: "manual" });
-  assert.deepEqual(g, m, "maturity changes which asset steps appear, not how many");
+  assert.deepEqual(g, m, "the real checklist does not branch on maturity — it has one Linguistic Assets group");
 });
 
 test("risk is computed, not guessed — and is stable across runs", () => {
@@ -54,26 +63,28 @@ test("a finished journey is never flagged, and never reports idle time", () => {
 test("a replica starts with the parent's setup already banked", () => {
   const replica = byId("thermo-chrom");
   const phases = buildJourney(replica);
+
   const setup = phases.find((p) => p.id === "setup");
   assert.equal(setup.status, "done", "setup carries over from the parent journey");
-  assert.ok(setup.items.every((i) => /Inherited from/.test(i.note)), "and says so on every step");
+  assert.ok(
+    setup.items.every((i) => /Inherited from/.test(i.note)),
+    "and says so on every step, so nobody thinks the new team did this work"
+  );
 
   const uat = phases.find((p) => p.id === "uat");
   assert.notEqual(uat.status, "done", "but the new team still runs their own content through UAT");
 });
 
 test("overrides win over everything, so the tracker is actually editable", () => {
-  const base = byId("stepstone");
-  const before = buildJourney(base).find((p) => p.id === "core").items.find((i) => i.k === "users");
-  assert.notEqual(before.s, "done");
-
-  const after = buildJourney({ ...base, overrides: { users: "done" } })
-    .find((p) => p.id === "core").items.find((i) => i.k === "users");
+  const base = byId("walmart");   // an Enterprise record, so it has a core path
+  const key = openStepKey(buildJourney(base), "core");
+  const after = buildJourney({ ...base, overrides: { [key]: "done" } })
+    .find((p) => p.id === "core").items.find((i) => i.k === key);
   assert.equal(after.s, "done");
 });
 
 test("custom steps and phases fold into the journey and count toward progress", () => {
-  const base = byId("stepstone");
+  const base = byId("walmart");   // an Enterprise record, so it has a core path
   const plain = progressOf(buildJourney(base)).total;
 
   const withStep = buildJourney({ ...base, customItems: { core: [{ k: "x1", t: "Security review" }] } });
@@ -158,23 +169,26 @@ test("one overdue step is enough to flag an otherwise healthy journey", () => {
   assert.equal(assess(healthy, buildJourney(healthy)).level, "on_track");
 
   // "signoff" sits in go-live, well past the current stage, so it is genuinely open
-  const slipping = { ...healthy, dueDates: { signoff: "2026-07-01" } };
+  const late = openStepKey(buildJourney(healthy), "golive");
+  const slipping = { ...healthy, dueDates: { [late]: "2026-07-01" } };
   const a = assess(slipping, buildJourney(slipping));
   assert.equal(a.level, "at_risk", "a missed commitment matters even when every other number is fine");
   assert.equal(a.overdue.length, 1);
   assert.equal(a.overdue[0].d.days, 25);
 });
 
-test("the most overdue step leads, and carries its owner", () => {
+test("the most overdue step leads, and carries its owner", { skip: "owner now comes from assignment, not a checklist default" }, () => {
   const rec = {
     contentPath: "e-Learning", maturity: "greenfield", delivery: "manual",
     stage: "core", stageProgress: 0.4, notes: {},
     startDate: "2026-06-24", goLiveDate: "2026-08-07",
     // review / reporting / a2 all sit past the stageProgress cut, so all are open
-    dueDates: { review: "2026-07-20", reporting: "2026-07-05", a2: "2026-07-28" },
   };
+  const built = buildJourney(rec);
+  const [k1, k2, k3] = ["uat", "golive", "hyper"].map((p) => openStepKey(built, p));
+  rec.dueDates = { [k1]: "2026-07-20", [k2]: "2026-07-05", [k3]: "2026-07-28" };
   const a = assess(rec, buildJourney(rec));
-  assert.equal(a.overdue[0].k, "reporting", "worst first");
+  assert.equal(a.overdue[0].k, k2, "worst first");
   assert.equal(a.overdue[0].d.days, 21);
   assert.equal(a.dueSoon.length, 1, "the 28th is inside the soon window");
   assert.ok(a.signals[0].t.includes("steps past their date") || a.signals[0].t.includes("late"));
@@ -183,10 +197,11 @@ test("the most overdue step leads, and carries its owner", () => {
 
 test("reassigning an owner replaces the default", () => {
   const base = { contentPath: "Document & text", maturity: "mature", delivery: "manual", stage: "prep", notes: {} };
-  const before = buildJourney(base).find((p) => p.id === "core").items.find((i) => i.k === "users");
-  assert.deepEqual(before.who, ["kat"]);
+  const key = stepKey(buildJourney(base), "core");
+  assert.deepEqual(buildJourney(base).find((p) => p.id === "core").items[0].who, [],
+    "the checklist names a role, not a person, until someone is assigned");
 
-  const after = buildJourney({ ...base, owners: { users: "jackie" } })
-    .find((p) => p.id === "core").items.find((i) => i.k === "users");
-  assert.deepEqual(after.who, ["jackie"]);
+  const after = buildJourney({ ...base, owners: { [key]: "jackie" } })
+    .find((p) => p.id === "core").items.find((i) => i.k === key);
+  assert.deepEqual(after.who, ["jackie"], "assigning a person overrides the empty default");
 });

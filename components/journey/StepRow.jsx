@@ -12,7 +12,7 @@ const fmt = (iso) => {
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 };
 
-export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, onRename, onRemove, people }) {
+export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, onRename, onRemove, people, lock }) {
   const [editDue, setEditDue] = useState(false);
   const [editOwner, setEditOwner] = useState(false);
   const [raising, setRaising] = useState(false);
@@ -47,13 +47,16 @@ export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, 
       }}
     >
       <button
-        onClick={() => onCycle(it.k)}
-        title="Click to change status"
+        onClick={() => !lock?.locked && onCycle(it.k)}
+        disabled={Boolean(lock?.locked)}
+        title={lock?.locked ? "Finish " + lock.blockedBy + " first" : "Click to change status"}
         className="mt-0.5 rounded flex items-center justify-center shrink-0"
         style={{
           width: 18, height: 18,
           background: it.s === "done" ? C.teal : it.s === "active" ? C.amber + "33" : "transparent",
           border: it.s === "done" ? "none" : "1.5px solid " + s.color,
+          opacity: lock?.locked ? 0.35 : 1,
+          cursor: lock?.locked ? "not-allowed" : "pointer",
         }}
       >
         {it.s === "done" && <Check size={12} strokeWidth={3} color={C.bg} />}
@@ -134,6 +137,12 @@ export function StepRow({ it, onCycle, onDue, onOwner, onTicket, onTicketState, 
           </div>
         )}
         {it.note && <div className="text-xs mt-0.5" style={{ color: C.faint }}>{it.note}</div>}
+
+        {lock?.locked && (
+          <div className="text-xs mt-0.5" style={{ color: C.faint }}>
+            Finish <span style={{ color: C.muted }}>{lock.blockedBy}</span> before confirming this
+          </div>
+        )}
 
         {/* Deadline and blockers */}
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">

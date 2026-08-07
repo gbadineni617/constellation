@@ -25,12 +25,13 @@ test("marketplace adds a sourcing phase; internal review does not", () => {
   assert.ok(progressOf(market).total > progressOf(internal).total);
 });
 
-test("marketplace adds a go-live gate that internal review does not have", () => {
-  const gate = (rm) =>
-    buildJourney({ ...base, reviewModel: rm })
-      .find((p) => p.id === "golive").items.some((i) => i.k === "gl_roster");
-  assert.equal(gate("marketplace"), true, "you cannot sign off with unstaffed locales");
-  assert.equal(gate("internal"), false);
+test("marketplace adds a roster stage that internal review does not have", () => {
+  // The gate moved: the checklist has no "confirm every pair has a linguist"
+  // line, so the constraint lives in the roster stage and in assess() rather
+  // than as an invented go-live item.
+  const has = (rm) => buildJourney({ ...base, reviewModel: rm }).some((p) => p.id === "roster");
+  assert.equal(has("marketplace"), true, "you cannot sign off with unstaffed locales");
+  assert.equal(has("internal"), false);
 });
 
 test("the roster phase sits before UAT — you cannot validate with nobody hired", () => {

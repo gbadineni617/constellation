@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildJourney, progressOf, assess } from "../lib/journey.js";
 import { coerceJourneyPlan } from "../lib/spine.js";
+import { openStepKey } from "./helpers.js";
 
 const template = {
   contentPath: "e-Learning", maturity: "mature", delivery: "manual", reviewModel: "internal",
@@ -108,10 +109,11 @@ test("renaming a phase does not change its id, so the spine still recognises it"
 });
 
 test("edits to one journey never leak into another", () => {
-  const edited = buildJourney({ ...template, phaseRenames: { uat: "Pilot" }, removedSteps: ["e2e"] });
+  const key = openStepKey(buildJourney(template), "uat");
+  const edited = buildJourney({ ...template, phaseRenames: { uat: "Pilot" }, removedSteps: [key] });
   const clean = buildJourney(template);
-  assert.equal(clean.find((p) => p.id === "uat").label, "UAT");
-  assert.ok(clean.find((p) => p.id === "uat").items.some((i) => i.k === "e2e"));
+  assert.match(clean.find((p) => p.id === "uat").label, /^UAT/);
+  assert.ok(clean.find((p) => p.id === "uat").items.some((i) => i.k === key));
   assert.notEqual(edited.find((p) => p.id === "uat").label, "UAT");
 });
 

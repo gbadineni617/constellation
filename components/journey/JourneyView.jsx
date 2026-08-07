@@ -10,6 +10,7 @@ import { buildJourney, progressOf, assess, copyFor, CONTENT_PATHS, CONTENT_COPY,
 import { REVIEW_MODELS, REVIEW_MODEL_IDS, usesMarketplace, reviewModelUnknown } from "@/lib/marketplace";
 import { coerceTicket, isOpen } from "@/lib/tickets";
 import { coerceMarker } from "@/lib/markers";
+import { TIERS, TIER_IDS, sequenceState, resolveTier, remapToTier } from "@/lib/checklist";
 import { describeTarget } from "@/lib/surfaces";
 import { isEmbedded, navigateHost } from "@/lib/embed";
 import { readJson, apiFetch } from "@/lib/http";
@@ -34,10 +35,28 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
   const [adding, setAdding] = useState(null); // "step" | "phase" | null
   const [gapId, setGapId] = useState(null);
   const [editingPhase, setEditingPhase] = useState(false);
+  const [remap, setRemap] = useState(null);
   const [phaseDraft, setPhaseDraft] = useState("");
 
   // Phases can be renamed, including the required ones. The id never changes, so
   // the spine still recognises them and everything keyed off the phase survives.
+  /**
+   * Switch plan.
+   *
+   * On a template journey this is just an axis. On a generated one the phases
+   * came from the model adapting the other checklist, so the journey has to be
+   * re-mapped — carrying status, notes and anything bespoke across rather than
+   * discarding the work.
+   */
+  const switchTier = (t) => {
+    if (t === resolveTier(rec.tier)) return;
+    if (!generated) { onAxis("tier", t); return; }
+
+    const out = remapToTier(rec, t);
+    setRemap(out.orphaned.length ? { to: TIERS[t].label, ...out } : null);
+    onPatch((r) => ({ ...r, tier: t, phases: out.phases }));
+  };
+
   const renamePhase = () => {
     if (!phaseDraft.trim()) return;
     onPatch((r) => ({ ...r, phaseRenames: { ...(r.phaseRenames || {}), [sel.id]: phaseDraft.trim() } }));
@@ -100,6 +119,11 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
   const stepsDone = sel.items.filter((i) => i.s === "done" || i.s === "na").length;
   const risk = useMemo(() => assess(rec, journey), [rec, journey]);
   const people = useMemo(() => peopleOf(rec), [rec]);
+
+  // The whole map stays visible; only confirmation is sequenced. Hiding future
+  // phases would stop an FDE looking ahead during a call, which is exactly when
+  // they need to.
+  const locks = useMemo(() => sequenceState(journey.map((p) => ({ ...p, steps: p.items }))), [journey]);
   const generated = Array.isArray(rec.phases) && rec.phases.length > 0;
   const approved = isApproved(rec);
   const phaseOverdue = risk.overdue.filter((o) => o.phase === sel.label).length;
@@ -185,6 +209,7 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
 
       {/* Controls — tucked into pop-ups so the map stays clean */}
       <div className="relative mt-5 flex flex-wrap gap-2" style={{ zIndex: 10 }}>
+        {ctl("tier", Layers, "Plan", TIERS[resolveTier(rec.tier)].label, C.violet)}
         {!generated && ctl("content", Layers, "Content", rec.contentPath, C.violet)}
         {!generated && ctl("maturity", Languages, "Assets", rec.maturity === "greenfield" ? "New to localization" : "From a prior vendor", C.teal)}
         {ctl("reviewers", Users, "Reviewers", REVIEW_MODELS[rec.reviewModel]?.short || "Not established", reviewModelUnknown(rec) ? C.amber : C.pink)}
@@ -219,6 +244,34 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
         </button>
 
         {pop && <button className="fixed inset-0" style={{ zIndex: 20, cursor: "default" }} onClick={() => setPop(null)} aria-label="Close" />}
+
+        {pop === "tier" && (
+          <Popover>
+            <div className="text-xs mb-3" style={{ color: C.muted }}>
+              Which implementation checklist this customer follows. The two are different
+              methodologies, not one filtered.
+            </div>
+            <div className="space-y-1.5">
+              {TIER_IDS.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => { switchTier(t); setPop(null); }}
+                  className="w-full text-left rounded-lg px-3 py-2.5"
+                  style={{
+                    background: resolveTier(rec.tier) === t ? C.brand + "2E" : "transparent",
+                    border: "1px solid " + (resolveTier(rec.tier) === t ? C.brand + "77" : C.line),
+                  }}
+                >
+                  <div className="text-sm flex items-baseline gap-2" style={{ color: C.text }}>
+                    {TIERS[t].label}
+                    <span className="mono" style={{ fontSize: 10, color: C.faint }}>{TIERS[t].cadence}</span>
+                  </div>
+                  <div className="text-xs mt-0.5" style={{ color: C.faint }}>{TIERS[t].blurb}</div>
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
 
         {pop === "content" && (
           <Popover>
@@ -372,6 +425,23 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
             <div className="mono uppercase tracking-wider" style={{ fontSize: 10, color: C.faint }}>Why this path</div>
             <div className="text-sm mt-1" style={{ color: C.text }}>{rec.rationale}</div>
           </div>
+        </div>
+      )}
+
+      {remap && (
+        <div className="rounded-xl px-4 py-3 mt-4 flex items-start gap-2.5 fade" style={{ background: C.amber + "12", border: "1px solid " + C.amber + "3D" }}>
+          <AlertTriangle size={14} style={{ color: C.amber, flexShrink: 0, marginTop: 2 }} />
+          <div className="flex-1">
+            <div className="text-sm" style={{ color: C.text }}>
+              Switched to the {remap.to} checklist — {remap.carried} steps carried across.
+            </div>
+            <div className="text-xs mt-1" style={{ color: C.muted }}>
+              {remap.orphaned.length} step{remap.orphaned.length === 1 ? "" : "s"} had no equivalent and
+              {remap.orphaned.length === 1 ? " was" : " were"} dropped: {remap.orphaned.slice(0, 3).join("; ")}
+              {remap.orphaned.length > 3 ? " and " + (remap.orphaned.length - 3) + " more" : ""}.
+            </div>
+          </div>
+          <button onClick={() => setRemap(null)} style={{ color: C.faint }}><X size={14} /></button>
         </div>
       )}
 
@@ -565,13 +635,19 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
         {showSteps && (
           <div className="mt-4 space-y-1.5 fade">
             {sel.items.map((it, i) => (
+              <React.Fragment key={it.k || i}>
+                {it.group && it.group !== sel.items[i - 1]?.group && (
+                  <div className="mono uppercase tracking-wider pt-2 pb-1" style={{ fontSize: 10, color: C.faint }}>
+                    {it.group}
+                  </div>
+                )}
               <StepRow
-                key={it.k || i}
                 it={it}
                 onCycle={cycle}
                 onDue={(k, v) => onPatch((r) => ({ ...r, dueDates: { ...(r.dueDates || {}), [k]: v } }))}
                 onOwner={(k, v) => onPatch((r) => ({ ...r, owners: { ...(r.owners || {}), [k]: v } }))}
                 people={people}
+                lock={locks.get(it.k)}
                 onRename={(k, t) => onPatch((r) => ({ ...r, renames: { ...(r.renames || {}), [k]: t } }))}
                 onRemove={(k) => onPatch((r) => ({ ...r, removedSteps: [...(r.removedSteps || []), k] }))}
                 onTicket={(k, t) =>
@@ -588,6 +664,7 @@ export function JourneyView({ rec, onBack, onAxis, onReplicate, siblings, onPatc
                   }))
                 }
               />
+              </React.Fragment>
             ))}
 
             {adding === "step" ? (

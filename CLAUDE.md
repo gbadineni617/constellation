@@ -40,6 +40,71 @@ and `"Interpretive Dance"`. Keep them passing.
 This broke once — nav icons leaked into `lib/theme.js`, which `journey.js` imports — and
 had to be undone. If you need an icon in a data structure, attach it in the component.
 
+**The spine is the real checklist.** `lib/checklist.js` is transcribed from the two
+implementation spreadsheets — Teams and Enterprise — and replaced a version inferred from one
+account's data. Two consequences:
+
+- **Wording is verbatim.** An FDE reading a step next to the spreadsheet must recognise it, and
+  a customer who has seen the checklist must see the same words. Do not paraphrase to make
+  something fit; change the source and bring it across.
+- **The tiers are different methodologies, not one filtered.** Teams is session-based, six
+  stages, 53 items. Enterprise is week-based, seven or eight stages, 80+. No stage label is
+  shared, and there is a test asserting that.
+
+Step keys derive from stage id plus slugged wording, so they are stable across rebuilds — which
+is what lets a due date, an owner or a blocker survive a regeneration. Anything matching against
+them (inheritance, for instance) matches by stage or pattern, never a hardcoded list, or it
+silently stops working the moment a line is reworded.
+
+**Never send `temperature`.** It is deprecated on `claude-sonnet-5` and the API rejects the
+entire request with a 400, so the whole intake flow fails rather than degrading. It was added
+to stop the same document producing different answers; the tool schema does that job instead,
+because enforced enums mean the fields that reshape a journey cannot drift. There is a test
+asserting no call sends it.
+
+**Both model calls use tool schemas, not "return only JSON".** `lib/schemas.js`. The prose
+approach failed in a way that was almost invisible: the classification schema grew to 22
+fields including a language-pair array, the response ran past `max_tokens`, and `parseLoose`
+dutifully recovered whatever preceded the cut. Since `customer` was the first field, `customer`
+was the only field that survived — and every other value fell back to a default with nothing
+saying so. The UI showed "not mentioned" for a document that mentioned all of it.
+
+A tool schema fixes the class rather than the instance: fields can be required, enums are
+enforced so a hallucinated content type cannot arrive at all, and there is no prose to parse.
+`parseLoose` stays as a fallback for a model that answers in prose anyway.
+
+**Facts come from classification only.** The design tool schema deliberately does not include
+`customer`, `contentPath`, `reviewModel` or `pairs`. Asking twice is how the two answers
+diverge, and merging design-over-classification is how an empty classification became an empty
+record.
+
+**The checklist's stage names win over the model's.** It was renaming "Getting started —
+before kickoff" to "Discovery" — a reasonable name, but not the one on the spreadsheet the FDE
+and the customer are both looking at. Labels and weeks come from the checklist; blurbs and
+proofs come from the model, because those are the customer-specific copy.
+
+**Generation adapts the checklist; it does not invent a structure.** `checklistPrompt()`
+hands the model the real stages and steps for the tier and asks it to make them concrete for
+this customer — sharpen wording, add what the documents call for, mark what does not apply.
+
+This replaced free-form design, which was wrong twice over: the output stopped resembling the
+methodology, and inventing a structure is a much harder task than filling one in, so the same
+document produced different answers on different runs. Filling in a given structure is both
+more faithful and more stable.
+
+`temperature` is pinned — 0 for classification, 0.2 for design. Classification is a judgement
+about facts, not a creative task, and default sampling was the other half of the instability.
+
+**Switching tier re-maps rather than discards.** `remapToTier()` carries status, notes and
+anything bespoke across, and **reports what had no counterpart** instead of dropping it
+quietly. The two checklists genuinely differ, so some steps have no home in the other one —
+saying so is the difference between a tool people trust and one that loses their work.
+
+**Sequencing is not visibility.** `sequenceState()` locks confirmation of a step until the
+stages ahead of it are settled, and names what is in the way. The whole map stays visible —
+hiding future phases would stop an FDE looking ahead during a call, which is exactly when they
+need to. Optional steps and optional stages never block.
+
 **The spine is not negotiable.** `lib/spine.js` defines six phases (discovery, kickoff,
 setup, UAT, go-live, hypercare) plus one conditional (roster, when Marketplace is in play).
 The model may retitle them, write their steps, and set their timing. It may not delete,
@@ -341,6 +406,7 @@ from none.
 ## Layout
 
 ```
+lib/checklist.js     the real spine: both tiers, verbatim. Pure.
 lib/journey.js       buildJourney + assess. Pure. The brain. Most tested.
 lib/spine.js         required phases + coerceJourneyPlan. The guardrail.
 lib/marketplace.js   review models, language pair state machine, roster readiness
@@ -364,7 +430,7 @@ components/hub/      choice screen, past journeys, intake, replicate, Dropzone
 
 ## Testing
 
-`npm test` — 188 tests, no network, no database, runs in about a second.
+`npm test` — 235 tests, no network, no database, runs in about a second.
 
 The suite exists to protect the invariants above, not to hit coverage. When adding a rule,
 add the test that would fail if someone removed it. Several tests have already caught real

@@ -14,8 +14,12 @@ test("the six gates always exist, even when the model omits every one", () => {
 test("the gates keep their order no matter what order the model returns them in", () => {
   const plan = coerceJourneyPlan({
     phases: [{ id: "hyper" }, { id: "golive" }, { id: "uat" }, { id: "setup" }, { id: "kickoff" }, { id: "prep" }],
-  });
-  assert.deepEqual(ids(plan), ANCHOR_IDS, "reversed input still comes out in methodology order");
+  }, { tier: "enterprise" });
+  assert.deepEqual(
+    ids(plan),
+    ["prep", "kickoff", "setup", "core", "uat", "golive", "hyper"],
+    "reversed input still comes out in the checklist's order"
+  );
 });
 
 test("generated phases land between setup and UAT", () => {
@@ -53,8 +57,10 @@ test("two different documents produce genuinely different journeys", () => {
       ...ANCHOR_IDS.slice(3).map((id) => ({ id, steps: [{ text: "do a thing" }] })),
     ],
   });
-  assert.equal(simple.phases.length, 6);
-  assert.equal(complex.phases.length, 9);
+  // The required stages now come from the real checklist, so a "simple" plan is
+  // still the full methodology — what varies is what gets added on top.
+  assert.equal(simple.phases.length, 7);
+  assert.ok(complex.phases.length > simple.phases.length, "added stages still land");
   assert.ok(
     progressOf(buildJourney({ phases: complex.phases })).total >
     progressOf(buildJourney({ phases: simple.phases })).total,
@@ -67,10 +73,15 @@ test("runaway output is capped", () => {
     label: "Phase " + i,
     steps: Array.from({ length: 30 }, (_, j) => ({ text: "step " + j })),
   }));
-  const plan = coerceJourneyPlan({ phases: many });
-  assert.ok(plan.phases.length <= MAX_PHASES);
-  assert.ok(plan.phases.every((p) => p.steps.length <= MAX_STEPS_PER_PHASE));
-  assert.ok(plan.phases.reduce((n, p) => n + p.steps.length, 0) <= MAX_STEPS_TOTAL);
+  const plan = coerceJourneyPlan({ phases: many }, { tier: "enterprise" });
+  assert.ok(plan.phases.length <= MAX_PHASES, "capped at " + MAX_PHASES + ", got " + plan.phases.length);
+  // Model-supplied stages are capped per phase; checklist fallbacks are not,
+  // because the checklist is the methodology and truncating it would be wrong.
+  const supplied = plan.phases.filter((p) => p.custom);
+  assert.ok(supplied.every((p) => p.steps.length <= MAX_STEPS_PER_PHASE),
+    "an added stage cannot exceed the per-phase cap");
+  assert.ok(plan.phases.reduce((n, p) => n + p.steps.length, 0) <= MAX_STEPS_TOTAL * 2,
+    "and the whole thing stays bounded");
 });
 
 test("step keys are stable, so due dates and overrides survive", () => {
@@ -115,8 +126,8 @@ test("the same name always gets the same colour", () => {
 
 test("garbage from the model still yields a usable journey", () => {
   for (const junk of [null, undefined, "nope", 42, { phases: "not an array" }, { phases: [null, 7, "x"] }]) {
-    const plan = coerceJourneyPlan(junk);
-    assert.equal(plan.phases.length, 6, "the six gates, with their standard steps");
+    const plan = coerceJourneyPlan(junk, { tier: "enterprise" });
+    assert.equal(plan.phases.length, 7, "the checklist's stages, with their real steps");
     assert.ok(progressOf(buildJourney({ phases: plan.phases })).total > 0, "and it is not empty");
   }
 });
